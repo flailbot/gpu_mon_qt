@@ -1,8 +1,11 @@
 # src/core.py
 import subprocess
 import re
+import os # Needed for path joining
+import sys # For sys.prefix (optional, for finding helper)
+import shutil # For checking if helper exists in PATH
 
-# Static info function remains the same
+# Static info function
 def get_gpu_static_info():
     """
     Gets static GPU information (Name, VRAM, Driver, Max PCIe Gen) using nvidia-smi.
@@ -116,6 +119,123 @@ def get_gpu_dynamic_status():
         print(f"An unexpected error occurred in get_gpu_dynamic_status: {e}")
         return None
 
+# --- Path to the compiled C helper ---
+# Adjust this path as needed. Assumes gddr6_helper is in the same dir as core.py
+HELPER_NAME = "gddr6_helper"
+# Try to find it alongside the script first
+HELPER_PATH = os.path.join(os.path.dirname(__file__), HELPER_NAME)
+# Fallback: Check if it's in the system PATH (if installed system-wide)
+if not os.path.exists(HELPER_PATH) or not os.access(HELPER_PATH, os.X_OK):
+    HELPER_PATH = shutil.which(HELPER_NAME) # None if not found in PATH
+
+
+def get_vram_temperature():
+    """
+    Gets VRAM temperature by executing the compiled 'gddr6_helper' C program.
+
+    REQUIRES:
+        - The 'gddr6_helper' executable to be compiled and located at HELPER_PATH
+          or in the system PATH.
+        - The 'gddr6_helper' to be run with root privileges (e.g., via sudo).
+        - libpci-dev installed for the helper compilation.
+
+    Returns:
+        int: VRAM temperature in degrees Celsius if successful.
+        str: An error message ('N/A', 'No Helper', 'No Root?', 'Error', 'Not Supported')
+             if the temperature cannot be retrieved. 'Not Supported' might mean
+             the GPU isn't in the helper's table or mapping failed.
+    """
+    if HELPER_PATH is None:
+        # print("VRAM Temp Error: gddr6_helper executable not found.")
+        return "No Helper" # Helper program not found or not executable
+
+    # Construct the command, prepending sudo
+    command = ["sudo", "-n", HELPER_PATH] # -n: non-interactive sudo
+
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=True, # Raise error on non-zero exit code from helper
+            timeout=3  # Short timeout for the helper
+        )
+
+        # Parse the output (expecting a single integer)
+        temp_str = result.stdout.strip()
+        if not temp_str: # Handle empty output case
+             print(f"VRAM Temp Error: Helper '{HELPER_PATH}' produced no output.")
+             return "Error"
+
+        temperature = int(temp_str)
+
+        if temperature < 0: # Helper uses -1 for internal errors typically
+             print(f"VRAM Temp Info: Helper indicated error or no compatible device (returned {temperature}).")
+             # Could refine this based on specific negative return codes if added to C helper
+             return "Not Supported"
+        return temperature
+
+    except FileNotFoundError:
+        # This would catch if 'sudo' itself isn't found, highly unlikely
+        print("VRAM Temp Error: 'sudo' command not found?")
+        return "Error"
+    except subprocess.CalledProcessError as e:
+        # Helper exited with a non-zero status
+        stderr_output = e.stderr.strip()
+        # Check if it's likely a sudo password prompt failure
+        if "password is required" in stderr_output or "incorrect password attempt" in stderr_output or "sudo: a password is required" in stderr_output:
+            print("VRAM Temp Error: sudo requires a password or failed authentication.")
+            return "No Root?"
+        elif "Root privileges required" in stderr_output:
+            print("VRAM Temp Error: Helper explicitly requires root (sudo might have failed).")
+            return "No Root?"
+        elif "Memory mapping failed" in stderr_output:
+             print(f"VRAM Temp Error: Helper failed to map memory.\nStderr: {stderr_output}")
+             return "Not Supported" # Likely incompatible or requires kernel param
+        elif "Could not open /dev/mem" in stderr_output:
+             print(f"VRAM Temp Error: Helper could not open /dev/mem.\nStderr: {stderr_output}")
+             return "No Root?" # Could be permissions or other issue
+        else:
+            # Other errors from the helper
+            print(f"VRAM Temp Error: Helper exited with status {e.returncode}.")
+            if stderr_output:
+                print(f"  Stderr: {stderr_output}")
+            else:
+                print("  Stderr: (empty)")
+            return "Error" # General helper error
+
+    except subprocess.TimeoutExpired:
+        print(f"VRAM Temp Error: Helper command '{' '.join(command)}' timed out.")
+        # Attempt to kill the process if possible (may need pid, complex)
+        return "Timeout"
+    except ValueError:
+        # Output wasn't a valid integer
+        print(f"VRAM Temp Error: Cannot parse helper output '{result.stdout.strip()}' as integer.")
+        return "Parse Err"
+    except Exception as e:
+        # Catch-all for other unexpected Python errors
+        print(f"An unexpected Python error occurred in get_vram_temperature: {e}")
+        return "Py Error"
+
+
+# --- Optional: For testing core.py directly ---
+if __name__ == "__main__":
+    print("--- Testing Static Info ---")
+    # ... (static test remains same) ...
+
+    print("\n--- Testing Dynamic Status ---")
+    # ... (dynamic status test remains same) ...
+
+    print("\n--- Testing VRAM Temperature (Requires sudo & helper) ---")
+    vram_temp = get_vram_temperature()
+    if isinstance(vram_temp, int):
+        print(f"  VRAM Temperature: {vram_temp}°C")
+    else:
+        print(f"  Could not get VRAM Temperature. Status: {vram_temp}")
+        if vram_temp == "No Root?":
+            print("  -> Hint: Configure passwordless sudo for the helper:")
+            print(f"     echo '$USER ALL=(ALL) NOPASSWD: {HELPER_PATH}' | sudo EDITOR='tee -a' visudo")
+            print(f"     (Replace $USER with your username if needed, verify path is correct)")
 
 # --- Optional: For testing core.py directly ---
 if __name__ == "__main__":

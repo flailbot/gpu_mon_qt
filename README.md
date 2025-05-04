@@ -1,10 +1,12 @@
 # GPU Monitor QT
 
-A simple Nvidia GPU monitoring tool for **Linux**, built with Python and PySide6.
+A lightweight Nvidia GPU monitoring tool for **Linux**, built with Python and PySide6.
 
-*(Work in progress - v0.1)*
+![GPU Monitor QT Screenshot](./assets/gpu_mon_qt.png)
 
-## Features (Implemented - v0.1)
+*(Work in progress - v0.1a)*
+
+## Features (Implemented - v0.1a)
 
 **GPU Hardware Info:**
 *   Display GPU Name (e.g., NVIDIA GeForce RTX 4070)
@@ -14,6 +16,7 @@ A simple Nvidia GPU monitoring tool for **Linux**, built with Python and PySide6
 
 **GPU Monitoring (Updates every second):**
 *   Display GPU Core Temperature (°C)
+*   Display VRAM Temperature (°C) (**Experimental:** Requires root, compiled helper, specific GPUs)
 *   Display GPU Utilization (%)
 *   Display Memory Controller Utilization (%)
 *   Display Free Video Memory (MiB)
@@ -24,8 +27,6 @@ A simple Nvidia GPU monitoring tool for **Linux**, built with Python and PySide6
 *   Display Current GPU Fan Speed (%)
 
 ## Features (Planned)
-
-*   Display GPU Hot Spot / Junction / Memory Temperature (if available via `nvidia-smi` query)
 *   Add graphs/plots for monitored values over time
 *   Control Fan Speed / Fan Curve (requires elevated privileges)
 *   Control Clock Offsets (requires elevated privileges)
@@ -42,6 +43,8 @@ A simple Nvidia GPU monitoring tool for **Linux**, built with Python and PySide6
 *   **`nvidia-smi` command:** Verify this command works in your terminal by running `nvidia-smi`. If it doesn't, your drivers are likely not installed correctly or not loaded.
 *   **Python:** Python 3 (version 3.7 or newer recommended) needs to be installed. Check with `python3 --version`.
 *   **Git:** Required to clone the repository.
+*   **`libpci-dev`:** Required for compiling the VRAM temperature helper. Install using your package manager (e.g., `sudo apt install libpci-dev` on Debian/Ubuntu).
+*   **C Compiler:** A C compiler like `gcc` is needed (`build-essential` package usually provides this).
 
 **Steps:**
 
@@ -73,6 +76,22 @@ A simple Nvidia GPU monitoring tool for **Linux**, built with Python and PySide6
     pip install -r requirements.txt
     ```
 
+5.  **(Optional) Compile VRAM Temperature Helper:**
+    The VRAM temperature reading feature is **experimental** and requires compiling a small C helper program **on your own system**.
+    **Code Source:** The C code in `src/gddr6_helper.c` is adapted from the [gddr6 project by olealgoritme](https://github.com/olealgoritme/gddr6). Many thanks to them for figuring out the necessary hardware offsets!
+    To enable the experimental VRAM temperature reading (for compatible RTX 3000/4000 series GPUs), compile the C helper program:
+    ```bash
+    # Navigate to the src directory within the project
+    cd src
+    # Compile the helper
+    # Make sure libpci-dev is installed (e.g., sudo apt install libpci-dev on Debian/Ubuntu)
+    gcc gddr6_helper.c -o gddr6_helper -lpci
+    # Optional: Strip debug symbols to make it smaller
+    strip gddr6_helper
+    # Go back to the project root
+    cd ..
+    ```
+    This creates the `gddr6_helper` executable inside the `src` directory.
 ## Usage
 
 1.  **Open your terminal.**
@@ -94,7 +113,22 @@ A simple Nvidia GPU monitoring tool for **Linux**, built with Python and PySide6
 
 5.  The GPU Monitor window should appear, displaying your GPU information and updating the status metrics every second.
 
+    *   **VRAM Temperature Note:** If you compiled the `gddr6_helper`, the application will attempt to run it using `sudo` to read the VRAM temperature.
+    *   **Sudo Requirement:** You will likely be prompted for your password by `sudo` *unless* you configure passwordless `sudo` specifically for the `gddr6_helper` executable. This is necessary because accessing GPU hardware registers directly requires root privileges.
+    *   **Configuring Passwordless Sudo (Use with caution):**
+        If you understand the security implications and want to avoid the password prompt, you can add a line to your sudoers file. **Be very careful editing this file.** Run `sudo visudo` and add a line like this (replace `$USER` with your actual username and verify the path to `gddr6_helper` is correct):
+        ```
+        # Allow user $USER to run gddr6_helper without a password
+        $USER ALL=(ALL) NOPASSWD: /path/to/gpu_mon_qt/src/gddr6_helper
+        ```
+        Save and exit the editor.
+    *   If the helper fails (due to permissions, incompatible GPU, kernel parameters like `iomem=relaxed` not set, etc.), the VRAM temp field will show an error ("No Root?", "Not Supported", "Error") or may be hidden.
+
     *   **Troubleshooting:** If the application shows "Error", "N/A", or doesn't start, ensure your NVIDIA drivers are correctly installed and the `nvidia-smi` command runs without errors in your terminal. Check the terminal output where you ran `python main.py` for specific error messages printed by the application (e.g., "nvidia-smi not found", "Error executing nvidia-smi").
+
+## Acknowledgments
+
+*   The VRAM temperature reading functionality (`src/gddr6_helper.c`) is based on the code and research from the [gddr6 project by olealgoritme](https://github.com/olealgoritme/gddr6).
 
 ## License
 

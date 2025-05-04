@@ -58,6 +58,8 @@ class MainWindow(QMainWindow):
         # Create labels for dynamic status (Titles and Values)
         self.temp_label_title = QLabel("Temperature:")
         self.temp_value = QLabel("Loading...")
+        self.vram_temp_label_title = QLabel("VRAM Temperature:")
+        self.vram_temp_value = QLabel("Loading...") # Experimental
         self.gpu_util_label_title = QLabel("GPU Utilization:")
         self.gpu_util_value = QLabel("Loading...")
         self.mem_util_label_title = QLabel("Memory Utilization:")
@@ -66,7 +68,6 @@ class MainWindow(QMainWindow):
         self.mem_free_value = QLabel("Loading...")
         self.mem_used_label_title = QLabel("Memory Used:")
         self.mem_used_value = QLabel("Loading...")
-        # Add new labels for Power, Clocks, Fan
         self.power_label_title = QLabel("Power Draw:")
         self.power_value = QLabel("Loading...")
         self.core_clock_label_title = QLabel("Core Clock:")
@@ -76,10 +77,10 @@ class MainWindow(QMainWindow):
         self.fan_speed_label_title = QLabel("Fan Speed:")
         self.fan_speed_value = QLabel("Loading...")
 
-
         # Optional: Style dynamic value labels
         value_font_dynamic = QFont(); value_font_dynamic.setBold(True)
         self.temp_value.setFont(value_font_dynamic)
+        self.vram_temp_value.setFont(value_font_dynamic)
         self.gpu_util_value.setFont(value_font_dynamic)
         self.mem_util_value.setFont(value_font_dynamic)
         self.mem_free_value.setFont(value_font_dynamic)
@@ -92,16 +93,15 @@ class MainWindow(QMainWindow):
         # Add dynamic status labels to the grid layout
         row = 0
         dynamic_status_layout.addWidget(self.temp_label_title, row, 0); dynamic_status_layout.addWidget(self.temp_value, row, 1); row += 1
+        dynamic_status_layout.addWidget(self.vram_temp_label_title, row, 0); dynamic_status_layout.addWidget(self.vram_temp_value, row, 1); row += 1
         dynamic_status_layout.addWidget(self.gpu_util_label_title, row, 0); dynamic_status_layout.addWidget(self.gpu_util_value, row, 1); row += 1
         dynamic_status_layout.addWidget(self.mem_util_label_title, row, 0); dynamic_status_layout.addWidget(self.mem_util_value, row, 1); row += 1
         dynamic_status_layout.addWidget(self.mem_free_label_title, row, 0); dynamic_status_layout.addWidget(self.mem_free_value, row, 1); row += 1
         dynamic_status_layout.addWidget(self.mem_used_label_title, row, 0); dynamic_status_layout.addWidget(self.mem_used_value, row, 1); row += 1
-        # Add new rows for Power, Clocks, Fan
         dynamic_status_layout.addWidget(self.power_label_title, row, 0); dynamic_status_layout.addWidget(self.power_value, row, 1); row += 1
         dynamic_status_layout.addWidget(self.core_clock_label_title, row, 0); dynamic_status_layout.addWidget(self.core_clock_value, row, 1); row += 1
         dynamic_status_layout.addWidget(self.mem_clock_label_title, row, 0); dynamic_status_layout.addWidget(self.mem_clock_value, row, 1); row += 1
         dynamic_status_layout.addWidget(self.fan_speed_label_title, row, 0); dynamic_status_layout.addWidget(self.fan_speed_value, row, 1); row += 1
-
 
         # --- Load Initial Static Data ---
         self.load_static_gpu_info()
@@ -110,6 +110,8 @@ class MainWindow(QMainWindow):
         self.timer = QTimer(self)
         self.timer.setInterval(1000) # 1 second
         self.timer.timeout.connect(self.update_dynamic_status)
+        self._vram_helper_checked = False
+        self._vram_helper_available = False
         self.timer.start()
 
         # --- Initial Dynamic Data Update ---
@@ -153,7 +155,6 @@ class MainWindow(QMainWindow):
             self.mem_util_value.setText(format_value("mem_util", "%"))
             self.mem_free_value.setText(format_value("mem_free", "MiB"))
             self.mem_used_value.setText(format_value("mem_used", "MiB"))
-            # Update new labels
             self.power_value.setText(format_value("power", "W"))
             self.core_clock_value.setText(format_value("core_clock", "MHz"))
             self.mem_clock_value.setText(format_value("mem_clock", "MHz"))
@@ -167,10 +168,58 @@ class MainWindow(QMainWindow):
             self.mem_util_value.setText(error_text)
             self.mem_free_value.setText(error_text)
             self.mem_used_value.setText(error_text)
-            # Update new labels on error
             self.power_value.setText(error_text)
             self.core_clock_value.setText(error_text)
             self.mem_clock_value.setText(error_text)
             self.fan_speed_value.setText(error_text)
 
-# No __main__ block needed here
+        # --- Fetch VRAM Temp using Helper (conditionally) ---
+        vram_temp_status = "N/A" # Default status
+
+        # Check helper availability only once for efficiency
+        if not self._vram_helper_checked:
+             # Check if helper path was found by core.py
+             if core.HELPER_PATH:
+                 # Attempt a first read to see if sudo works / device compatible
+                 initial_vram_read = core.get_vram_temperature()
+                 if isinstance(initial_vram_read, int):
+                     self._vram_helper_available = True
+                     vram_temp_status = f"{initial_vram_read} °C" # Use the first read
+                 else:
+                     self._vram_helper_available = False
+                     vram_temp_status = initial_vram_read # Show error status (No Root?, No Helper, etc)
+                     # Hide the label if helper is definitively unavailable or unsupported after first check
+                     if vram_temp_status in ["No Helper", "Not Supported", "Error"]:
+                          self.vram_temp_label_title.setVisible(False)
+                          self.vram_temp_value.setVisible(False)
+                     elif vram_temp_status == "No Root?":
+                          self.vram_temp_value.setToolTip("Requires passwordless sudo for helper or running main app as root (not recommended).")
+                          self.vram_temp_value.setText(vram_temp_status) # Show No Root?
+                     else: # Other errors like Parse Err, Py Error, Timeout
+                          self.vram_temp_value.setText(vram_temp_status)
+
+             else: # Helper path wasn't found at startup
+                 self._vram_helper_available = False
+                 vram_temp_status = "No Helper"
+                 self.vram_temp_label_title.setVisible(False)
+                 self.vram_temp_value.setVisible(False)
+
+             self._vram_helper_checked = True # Mark as checked
+
+        elif self._vram_helper_available: # If available, get updates
+            vram_temp = core.get_vram_temperature()
+            if isinstance(vram_temp, int):
+                vram_temp_status = f"{vram_temp} °C"
+            else:
+                vram_temp_status = vram_temp # Show error like N/A, Timeout, etc.
+                # Maybe hide it if it persistently fails? Or just show error.
+                if vram_temp_status == "No Root?":
+                    # If sudo worked once then failed, something changed. Keep showing error.
+                    pass
+
+        # Update VRAM Temp label only if it wasn't hidden
+        if self.vram_temp_label_title.isVisible():
+             self.vram_temp_value.setText(vram_temp_status)
+
+
+# ... (No __main__ block needed here) ...
