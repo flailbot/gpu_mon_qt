@@ -108,3 +108,4 @@ dmypy.json
 *.env
 secrets.yaml
 config.local.yaml
+src/gddr6_helper

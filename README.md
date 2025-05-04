@@ -2,7 +2,7 @@
 
 A lightweight Nvidia GPU monitoring tool for **Linux**, built with Python and PySide6.
 
-![GPU Monitor QT Screenshot](./assets/gpu_mon_qt.png)
+<img src="./assets/gpu_mon_qt.png" width="200" />
 
 *(Work in progress - v0.1a)*
 
