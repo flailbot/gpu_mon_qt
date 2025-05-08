@@ -16,7 +16,7 @@ A lightweight Nvidia GPU monitoring tool for **Linux**, built with Python and Py
 
 **GPU Monitoring (Updates every second):**
 *   Display GPU Core Temperature (°C)
-*   Display VRAM Temperature (°C) (**Experimental:** Requires root, compiled helper, specific GPUs)
+*   Display VRAM Temperature (°C) (**Experimental:** Requires compilation)
 *   Display GPU Utilization (%)
 *   Display Memory Controller Utilization (%)
 *   Display Free Video Memory (MiB)
@@ -26,11 +26,14 @@ A lightweight Nvidia GPU monitoring tool for **Linux**, built with Python and Py
 *   Display Current Memory Clock (MHz)
 *   Display Current GPU Fan Speed (%)
 
+**GPU Overclocking:**
+*   Control Core Clock Offset
+*   Control Memory Clock Offsets
+*   Control Power Limit (requires elevated privileges)
+
 ## Features (Planned)
 *   Add graphs/plots for monitored values over time
-*   Control Fan Speed / Fan Curve (requires elevated privileges)
-*   Control Clock Offsets (requires elevated privileges)
-*   Control Power Limit (requires elevated privileges)
+*   Control Fan Speed / Fan Curve
 *   Create Profiles for settings
 
 ## Installation

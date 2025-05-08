@@ -2,16 +2,17 @@
 
 import sys
 from PySide6.QtWidgets import ( QMainWindow, QLabel, QApplication, QWidget,
-                              QVBoxLayout, QGridLayout, QGroupBox )
+                              QVBoxLayout, QGridLayout, QGroupBox, QPushButton ) # Added QPushButton
 from PySide6.QtCore import QTimer, Slot, Qt
 from PySide6.QtGui import QFont
 
 # Import core module using RELATIVE import
 try:
     from . import core
+    from .oc_window import OCWindow # Import the new OCWindow class
 except ImportError as e:
-     print(f"CRITICAL Error importing core module using relative import: {e}")
-     print("Ensure core.py exists in the 'src' directory alongside main_window.py.")
+     print(f"CRITICAL Error importing module: {e}")
+     print("Ensure core.py and oc_window.py exist in the 'src' directory.")
      sys.exit(1)
 
 
@@ -19,7 +20,10 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("GPU Monitor QT")
-        # self.resize(450, 450) # Optional: Adjust size for more content
+        # self.resize(450, 500) # Optional: Adjust size for more content including button
+
+        # --- Instance variable to hold the OC window ---
+        self.oc_window_instance = None
 
         # --- Main Layout Setup ---
         central_widget = QWidget(self)
@@ -49,17 +53,13 @@ class MainWindow(QMainWindow):
         static_info_layout.addWidget(self.driver_label, 2, 0); static_info_layout.addWidget(self.driver_value, 2, 1)
         static_info_layout.addWidget(self.pcie_label, 3, 0); static_info_layout.addWidget(self.pcie_value, 3, 1)
 
-
-        # --- Dynamic GPU Status Section ---
+        # --- Dynamic GPU Status Section (remains the same) ---
         self.dynamic_status_group = QGroupBox("GPU Device Status")
         main_layout.addWidget(self.dynamic_status_group)
         dynamic_status_layout = QGridLayout(self.dynamic_status_group)
-
-        # Create labels for dynamic status (Titles and Values)
+        # (Dynamic labels setup as before, including VRAM temp)
         self.temp_label_title = QLabel("Temperature:")
         self.temp_value = QLabel("Loading...")
-        self.vram_temp_label_title = QLabel("VRAM Temperature:")
-        self.vram_temp_value = QLabel("Loading...") # Experimental
         self.gpu_util_label_title = QLabel("GPU Utilization:")
         self.gpu_util_value = QLabel("Loading...")
         self.mem_util_label_title = QLabel("Memory Utilization:")
@@ -76,24 +76,17 @@ class MainWindow(QMainWindow):
         self.mem_clock_value = QLabel("Loading...")
         self.fan_speed_label_title = QLabel("Fan Speed:")
         self.fan_speed_value = QLabel("Loading...")
-
-        # Optional: Style dynamic value labels
+        self.vram_temp_label_title = QLabel("VRAM Temperature:")
+        self.vram_temp_value = QLabel("Loading...")
         value_font_dynamic = QFont(); value_font_dynamic.setBold(True)
-        self.temp_value.setFont(value_font_dynamic)
-        self.vram_temp_value.setFont(value_font_dynamic)
-        self.gpu_util_value.setFont(value_font_dynamic)
-        self.mem_util_value.setFont(value_font_dynamic)
-        self.mem_free_value.setFont(value_font_dynamic)
-        self.mem_used_value.setFont(value_font_dynamic)
-        self.power_value.setFont(value_font_dynamic) # Style new labels
-        self.core_clock_value.setFont(value_font_dynamic)
-        self.mem_clock_value.setFont(value_font_dynamic)
-        self.fan_speed_value.setFont(value_font_dynamic)
-
-        # Add dynamic status labels to the grid layout
+        # Apply font to all value labels
+        for label_val in [self.temp_value, self.gpu_util_value, self.mem_util_value,
+                          self.mem_free_value, self.mem_used_value, self.power_value,
+                          self.core_clock_value, self.mem_clock_value, self.fan_speed_value,
+                          self.vram_temp_value]:
+            label_val.setFont(value_font_dynamic)
         row = 0
         dynamic_status_layout.addWidget(self.temp_label_title, row, 0); dynamic_status_layout.addWidget(self.temp_value, row, 1); row += 1
-        dynamic_status_layout.addWidget(self.vram_temp_label_title, row, 0); dynamic_status_layout.addWidget(self.vram_temp_value, row, 1); row += 1
         dynamic_status_layout.addWidget(self.gpu_util_label_title, row, 0); dynamic_status_layout.addWidget(self.gpu_util_value, row, 1); row += 1
         dynamic_status_layout.addWidget(self.mem_util_label_title, row, 0); dynamic_status_layout.addWidget(self.mem_util_value, row, 1); row += 1
         dynamic_status_layout.addWidget(self.mem_free_label_title, row, 0); dynamic_status_layout.addWidget(self.mem_free_value, row, 1); row += 1
@@ -102,23 +95,27 @@ class MainWindow(QMainWindow):
         dynamic_status_layout.addWidget(self.core_clock_label_title, row, 0); dynamic_status_layout.addWidget(self.core_clock_value, row, 1); row += 1
         dynamic_status_layout.addWidget(self.mem_clock_label_title, row, 0); dynamic_status_layout.addWidget(self.mem_clock_value, row, 1); row += 1
         dynamic_status_layout.addWidget(self.fan_speed_label_title, row, 0); dynamic_status_layout.addWidget(self.fan_speed_value, row, 1); row += 1
+        dynamic_status_layout.addWidget(self.vram_temp_label_title, row, 0); dynamic_status_layout.addWidget(self.vram_temp_value, row, 1); row += 1
 
-        # --- Load Initial Static Data ---
+
+        # --- OC Settings Button ---
+        self.oc_button = QPushButton("OC Settings")
+        self.oc_button.clicked.connect(self.open_oc_settings_window)
+        main_layout.addWidget(self.oc_button) # Add button at the bottom of the main layout
+
+
+        # --- Load Initial Static Data & Start Timer ---
         self.load_static_gpu_info()
-
-        # --- Setup Dynamic Data Update Timer ---
-        self.timer = QTimer(self)
-        self.timer.setInterval(1000) # 1 second
-        self.timer.timeout.connect(self.update_dynamic_status)
-        self._vram_helper_checked = False
+        self._vram_helper_checked = False # For VRAM temp helper
         self._vram_helper_available = False
+        self.timer = QTimer(self)
+        self.timer.setInterval(1000)
+        self.timer.timeout.connect(self.update_dynamic_status)
         self.timer.start()
-
-        # --- Initial Dynamic Data Update ---
-        self.update_dynamic_status() # Get the first reading immediately
+        self.update_dynamic_status() # Initial update
 
     def load_static_gpu_info(self):
-        """Fetches static GPU info ONCE and updates the labels."""
+        # ... (remains the same) ...
         print("Fetching static GPU info...")
         info = core.get_gpu_static_info()
         if info:
@@ -128,7 +125,6 @@ class MainWindow(QMainWindow):
             self.pcie_value.setText(info.get("pcie_max_gen", "N/A"))
             print("Static info loaded successfully.")
         else:
-            # Handle error case
             error_text = "Error"
             self.gpu_name_value.setText(error_text)
             self.vram_value.setText(error_text)
@@ -138,18 +134,13 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def update_dynamic_status(self):
-        """Fetches ALL dynamic GPU status from core.py and updates the labels."""
-        status = core.get_gpu_dynamic_status() # Call the updated function
-
+        # ... (remains mostly the same, including VRAM temp logic) ...
+        status = core.get_gpu_dynamic_status()
         if status:
-            # Helper function to format value with unit, handling N/A
             def format_value(key, unit, default_val="?"):
                 val = status.get(key, default_val)
-                if val == "N/A":
-                    return "N/A" # Return N/A directly without unit if not applicable
+                if val == "N/A": return "N/A"
                 return f"{val} {unit}"
-
-            # Update the labels in the dynamic status box using the helper
             self.temp_value.setText(format_value("temperature", "°C"))
             self.gpu_util_value.setText(format_value("gpu_util", "%"))
             self.mem_util_value.setText(format_value("mem_util", "%"))
@@ -159,10 +150,8 @@ class MainWindow(QMainWindow):
             self.core_clock_value.setText(format_value("core_clock", "MHz"))
             self.mem_clock_value.setText(format_value("mem_clock", "MHz"))
             self.fan_speed_value.setText(format_value("fan_speed", "%"))
-
         else:
-            # Handle error case where core function returned None
-            error_text = "N/A" # Or "Error"
+            error_text = "N/A"
             self.temp_value.setText(error_text)
             self.gpu_util_value.setText(error_text)
             self.mem_util_value.setText(error_text)
@@ -173,53 +162,78 @@ class MainWindow(QMainWindow):
             self.mem_clock_value.setText(error_text)
             self.fan_speed_value.setText(error_text)
 
-        # --- Fetch VRAM Temp using Helper (conditionally) ---
-        vram_temp_status = "N/A" # Default status
-
-        # Check helper availability only once for efficiency
+        vram_temp_status = "N/A"
         if not self._vram_helper_checked:
-             # Check if helper path was found by core.py
              if core.HELPER_PATH:
-                 # Attempt a first read to see if sudo works / device compatible
                  initial_vram_read = core.get_vram_temperature()
                  if isinstance(initial_vram_read, int):
                      self._vram_helper_available = True
-                     vram_temp_status = f"{initial_vram_read} °C" # Use the first read
+                     vram_temp_status = f"{initial_vram_read} °C"
                  else:
                      self._vram_helper_available = False
-                     vram_temp_status = initial_vram_read # Show error status (No Root?, No Helper, etc)
-                     # Hide the label if helper is definitively unavailable or unsupported after first check
+                     vram_temp_status = initial_vram_read
                      if vram_temp_status in ["No Helper", "Not Supported", "Error"]:
                           self.vram_temp_label_title.setVisible(False)
                           self.vram_temp_value.setVisible(False)
                      elif vram_temp_status == "No Root?":
-                          self.vram_temp_value.setToolTip("Requires passwordless sudo for helper or running main app as root (not recommended).")
-                          self.vram_temp_value.setText(vram_temp_status) # Show No Root?
-                     else: # Other errors like Parse Err, Py Error, Timeout
+                          self.vram_temp_value.setToolTip("Requires passwordless sudo for helper.")
                           self.vram_temp_value.setText(vram_temp_status)
-
-             else: # Helper path wasn't found at startup
+                     else:
+                          self.vram_temp_value.setText(vram_temp_status)
+             else:
                  self._vram_helper_available = False
                  vram_temp_status = "No Helper"
                  self.vram_temp_label_title.setVisible(False)
                  self.vram_temp_value.setVisible(False)
-
-             self._vram_helper_checked = True # Mark as checked
-
-        elif self._vram_helper_available: # If available, get updates
+             self._vram_helper_checked = True
+        elif self._vram_helper_available:
             vram_temp = core.get_vram_temperature()
             if isinstance(vram_temp, int):
                 vram_temp_status = f"{vram_temp} °C"
             else:
-                vram_temp_status = vram_temp # Show error like N/A, Timeout, etc.
-                # Maybe hide it if it persistently fails? Or just show error.
-                if vram_temp_status == "No Root?":
-                    # If sudo worked once then failed, something changed. Keep showing error.
-                    pass
-
-        # Update VRAM Temp label only if it wasn't hidden
+                vram_temp_status = vram_temp
         if self.vram_temp_label_title.isVisible():
              self.vram_temp_value.setText(vram_temp_status)
 
 
-# ... (No __main__ block needed here) ...
+    # --- Slot to open the OC Settings window ---
+    @Slot()
+    def open_oc_settings_window(self):
+        """
+        Opens the OC Settings window.
+        If an instance already exists and is visible, it brings it to the front.
+        If not, it creates a new instance.
+        """
+        
+        if self.oc_window_instance is None:
+            # Create a new instance if one doesn't exist (or was closed and deleted)
+            desired_gpu_id = 0
+            self.oc_window_instance = OCWindow(gpu_id=desired_gpu_id, parent=self)
+            # Connect the destroyed signal to a slot that nullifies our reference
+            # This is important so we know to recreate it if the user closes it and clicks again
+            self.oc_window_instance.destroyed.connect(self._on_oc_window_destroyed)
+            print(f"DEBUG: OCWindow instance created: {self.oc_window_instance}")
+            self.oc_window_instance.show()
+            print(f"DEBUG: OCWindow.show() called. IsVisible: {self.oc_window_instance.isVisible()}")
+            print(f"DEBUG: OCWindow geometry after show: {self.oc_window_instance.geometry()}")
+            print(f"DEBUG: OCWindow window flags: {self.oc_window_instance.windowFlags()}")
+            # Force it to the front again, just in case
+            self.oc_window_instance.raise_()
+            self.oc_window_instance.activateWindow()
+        else:
+            # If an instance exists, just show it (in case it was hidden) and activate
+            print(f"DEBUG: OCWindow instance already exists: {self.oc_window_instance}")
+            self.oc_window_instance.show()
+            print(f"DEBUG: Existing OCWindow.show() called. IsVisible: {self.oc_window_instance.isVisible()}")
+            self.oc_window_instance.activateWindow() # Bring to front
+            print(f"DEBUG: Existing OCWindow.activateWindow() called.")
+
+    @Slot()
+    def _on_oc_window_destroyed(self):
+        """
+        Slot connected to the destroyed signal of the OCWindow.
+        Sets the instance reference to None so a new window can be created next time.
+        """
+        self.oc_window_instance = None
+
+# No __main__ block needed here
