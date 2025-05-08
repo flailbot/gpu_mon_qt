@@ -4,9 +4,9 @@ A lightweight Nvidia GPU monitoring tool for **Linux**, built with Python and Py
 
 <img src="./assets/gpu_mon_qt.png" width="200" />
 
-*(Work in progress - v0.1a)*
+*(Work in progress - v0.2)*
 
-## Features (Implemented - v0.1a)
+## Features (Implemented - v0.2)
 
 **GPU Hardware Info:**
 *   Display GPU Name (e.g., NVIDIA GeForce RTX 4070)
